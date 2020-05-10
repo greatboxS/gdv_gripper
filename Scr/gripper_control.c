@@ -1,0 +1,302 @@
+#include "gripper_def.h"
+
+#define f_timer_fre     1000000
+#define f_pwm_fre       333
+extern uint32_t SystemCoreClock;
+
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
+uint16_t servo_adc_buffer[NUMBER_ADC_CHANNEL];
+uint16_t adc_dma_buffer[NUMBER_ADC_CHANNEL];
+
+gripper_slot_control_block gripper_slot_block[4];
+
+void servo_init(servo_control_block* servo)
+{
+    uint8_t division_clock_timer_APB1 = 2; // depeding on the timer clock source is APB1 (APB1 is 2 and APB2 is 1)
+
+    TIM_MasterConfigTypeDef sMasterConfig;
+    TIM_OC_InitTypeDef sConfigOC;
+    GPIO_InitTypeDef GPIO_InitStruct;
+    ADC_ChannelConfTypeDef sConfig;
+    TIM_HandleTypeDef htim;
+
+    // init peripheral of current servo motor
+    // pwm, adc, pwr contrl
+    servo->peripheral_block = servo_peripheral_block_def[servo->servo_id];
+
+    // Initialize servo pwm channel
+    htim.Instance = servo->peripheral_block.tim;
+
+    if((servo->peripheral_block.tim !=TIM3) && (servo->peripheral_block.tim != TIM4))
+        htim.Init.Prescaler = (uint32_t)(SystemCoreClock / f_timer_fre) - 1;
+    else
+        htim.Init.Prescaler = (uint32_t)(SystemCoreClock / f_timer_fre / division_clock_timer_APB1 - 1);
+
+    htim.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim.Init.Period = f_timer_fre / f_pwm_fre;
+    htim.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    HAL_TIM_PWM_Init(htim);
+
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(htim, &sMasterConfig);
+
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = f_timer_fre / f_pwm_fre / 2;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+    HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, servo->peripheral_block.tim_channel);
+
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+
+    if(servo->peripheral_block.tim == TIM1)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM1;
+    else if(servo->peripheral_block.tim == TIM2)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    else if(servo->peripheral_block.tim == TIM3)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;
+    else if(servo->peripheral_block.tim == TIM4)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM4;
+    else if(servo->peripheral_block.tim == TIM5)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM5;
+    else if(servo->peripheral_block.tim == TIM6)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM6;
+    else if(servo->peripheral_block.tim == TIM7)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM7;
+    else if(servo->peripheral_block.tim == TIM8)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM8;
+    else if(servo->peripheral_block.tim == TIM9)
+        GPIO_InitStruct.Alternate = GPIO_AF1_TIM9;
+
+    GPIO_InitStruct.Pin = servo->peripheral_block.pwm_pin;
+    HAL_GPIO_Init(servo->peripheral_block.pwm_port, &GPIO_InitStruct);
+
+    // Initialize servo adc channel
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Pin = servo->peripheral_block.adc_pin;
+    HAL_GPIO_Init(servo->peripheral_block.adc_port, &GPIO_InitStruct);
+
+    sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+    sConfig.Rank = servo->servo_id+1;
+    sConfig.Channel = servo->peripheral_block.adc_channel;
+
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+    // pointer to servo adc buffer
+    // can get value from this variable
+    servo->adc_value_ptr = &servo_adc_buffer[servo->servo_id];
+}
+
+uint8_t gripper_slot_init(gripper_slot_control_block* slot)
+{
+    switch (slot->slot_id) {
+    case GRIPPER_SLOT_1:
+
+        slot->normal_servo1.servo_id = SLOT1_N_SERVO1;
+        servo_init(&slot->normal_servo1);
+
+        slot->normal_servo2.servo_id = SLOT1_N_SERVO2;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_main_servo.servo_id = SLOT1_L_SERVO_MAIN;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_sub_servo.servo_id = SLOT1_L_SERVO_SUB;
+        servo_init(&slot->normal_servo1);
+
+        break;
+
+    case GRIPPER_SLOT_2:
+        slot->normal_servo1.servo_id = SLOT2_N_SERVO1;
+        servo_init(&slot->normal_servo1);
+
+        slot->normal_servo2.servo_id = SLOT2_N_SERVO2;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_main_servo.servo_id = SLOT2_L_SERVO_MAIN;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_sub_servo.servo_id = SLOT2_L_SERVO_SUB;
+        servo_init(&slot->normal_servo1);
+        break;
+
+    case GRIPPER_SLOT_3:
+        slot->normal_servo1.servo_id = SLOT3_N_SERVO1;
+        servo_init(&slot->normal_servo1);
+
+        slot->normal_servo2.servo_id = SLOT3_N_SERVO2;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_main_servo.servo_id = SLOT3_L_SERVO_MAIN;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_sub_servo.servo_id = SLOT3_L_SERVO_SUB;
+        servo_init(&slot->normal_servo1);
+        break;
+
+    case GRIPPER_SLOT_4:
+        slot->normal_servo1.servo_id = SLOT4_N_SERVO1;
+        servo_init(&slot->normal_servo1);
+
+        slot->normal_servo2.servo_id = SLOT4_N_SERVO2;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_main_servo.servo_id = SLOT4_L_SERVO_MAIN;
+        servo_init(&slot->normal_servo1);
+
+        slot->linear_sub_servo.servo_id = SLOT4_L_SERVO_SUB;
+        servo_init(&slot->normal_servo1);
+        break;
+
+    default:
+        return RESPOND_FAILED;
+        break;
+    }
+
+    return RESPOND_SUCESS;
+}
+
+void gripper_init()
+{
+    __HAL_RCC_ADC1_CLK_ENABLE();
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ENABLE;
+    hadc1.Init.ContinuousConvMode = ENABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = NUMBER_ADC_CHANNEL;
+    hadc1.Init.DMAContinuousRequests = ENABLE;
+    hadc1.Init.EOCSelection = DISABLE;
+    HAL_ADC_Init(&hadc1);
+
+    for(int i = 0; i< sizeof(gripper_slot_block); i++){
+        gripper_slot_block[i].slot_id = i;
+        gripper_slot_init(&gripper_slot_block[i]);
+    }
+
+    /* DMA controller clock enable */
+    __HAL_RCC_DMA2_CLK_ENABLE();
+    HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+
+    // init adc dma after init all adc successfully
+    hdma_adc1.Instance = DMA2_Stream0;
+    hdma_adc1.Init.Channel = DMA_CHANNEL_0;
+    hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_adc1.Init.Mode = DMA_CIRCULAR;
+    hdma_adc1.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    HAL_DMA_Init(&hdma_adc1);
+
+    __HAL_LINKDMA(&hadc1,DMA_Handle,hdma_adc1);
+}
+
+void set_servo_duty(servo_control_block* servo_ctrl_block, uint16_t duty_cycle)
+{
+    switch (servo_ctrl_block->peripheral_block.tim_channel) {
+    case TIM_CHANNEL_1:
+        servo_ctrl_block->peripheral_block.tim->CCR1 = duty_cycle;
+        break;
+
+    case TIM_CHANNEL_2:
+        servo_ctrl_block->peripheral_block.tim->CCR2 = duty_cycle;
+        break;
+
+    case TIM_CHANNEL_3:
+        servo_ctrl_block->peripheral_block.tim->CCR3 = duty_cycle;
+        break;
+
+    case TIM_CHANNEL_4:
+        servo_ctrl_block->peripheral_block.tim->CCR4 = duty_cycle;
+        break;
+
+    case TIM_CHANNEL_ALL:
+        servo_ctrl_block->peripheral_block.tim->CCR1 = duty_cycle;
+        servo_ctrl_block->peripheral_block.tim->CCR2 = duty_cycle;
+        servo_ctrl_block->peripheral_block.tim->CCR3 = duty_cycle;
+        servo_ctrl_block->peripheral_block.tim->CCR4 = duty_cycle;
+        break;
+
+    default:
+        break;
+
+    }
+}
+
+uint8_t servo_set_pwm_duty(uint8_t servo_id, uint16_t duty_cycle)
+{
+    for(int i=0; i < sizeof(gripper_slot_block); i++)
+    {
+        if(gripper_slot_block[i].normal_servo1.servo_id == servo_id){
+            set_servo_duty(&gripper_slot_block[i].normal_servo1, duty_cycle);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].normal_servo2.servo_id == servo_id){
+            set_servo_duty(&gripper_slot_block[i].normal_servo2, duty_cycle);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].linear_main_servo.servo_id == servo_id){
+            set_servo_duty(&gripper_slot_block[i].linear_main_servo, duty_cycle);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].linear_sub_servo.servo_id == servo_id){
+            set_servo_duty(&gripper_slot_block[i].linear_sub_servo, duty_cycle);
+            return RESPOND_SUCESS;
+        }
+    }
+
+    return RESPOND_FAILED;
+}
+
+uint8_t servo_ctrl_pwr_pin(uint8_t servo_id, int pin_state )
+{
+    for(int i=0; i < sizeof(gripper_slot_block); i++)
+    {
+        if(gripper_slot_block[i].normal_servo1.servo_id == servo_id){
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              pin_state);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].normal_servo2.servo_id == servo_id){
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              pin_state);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].linear_main_servo.servo_id == servo_id){
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              pin_state);
+            return RESPOND_SUCESS;
+        }
+
+        if(gripper_slot_block[i].linear_sub_servo.servo_id == servo_id){
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+                              pin_state);
+            return RESPOND_SUCESS;
+        }
+    }
+
+    return RESPOND_FAILED;
+}
+
