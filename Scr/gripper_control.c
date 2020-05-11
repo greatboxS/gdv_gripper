@@ -204,7 +204,7 @@ void gripper_init()
     __HAL_LINKDMA(&hadc1,DMA_Handle,hdma_adc1);
 }
 
-void set_servo_duty(servo_control_block* servo_ctrl_block, uint16_t duty_cycle)
+void servo_set_pwm_duty_cycle(servo_control_block* servo_ctrl_block, uint16_t duty_cycle)
 {
     switch (servo_ctrl_block->peripheral_block.tim_channel) {
     case TIM_CHANNEL_1:
@@ -236,27 +236,27 @@ void set_servo_duty(servo_control_block* servo_ctrl_block, uint16_t duty_cycle)
     }
 }
 
-uint8_t servo_set_pwm_duty(uint8_t servo_id, uint16_t duty_cycle)
+uint8_t servo_set_pwm_duty_cycle(uint8_t servo_id, uint16_t duty_cycle)
 {
     for(int i=0; i < sizeof(gripper_slot_block); i++)
     {
         if(gripper_slot_block[i].normal_servo1.servo_id == servo_id){
-            set_servo_duty(&gripper_slot_block[i].normal_servo1, duty_cycle);
+            servo_set_duty_cycle(&gripper_slot_block[i].normal_servo1, duty_cycle);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].normal_servo2.servo_id == servo_id){
-            set_servo_duty(&gripper_slot_block[i].normal_servo2, duty_cycle);
+            servo_set_duty_cycle(&gripper_slot_block[i].normal_servo2, duty_cycle);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].linear_main_servo.servo_id == servo_id){
-            set_servo_duty(&gripper_slot_block[i].linear_main_servo, duty_cycle);
+            servo_set_duty_cycle(&gripper_slot_block[i].linear_main_servo, duty_cycle);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].linear_sub_servo.servo_id == servo_id){
-            set_servo_duty(&gripper_slot_block[i].linear_sub_servo, duty_cycle);
+            servo_set_duty_cycle(&gripper_slot_block[i].linear_sub_servo, duty_cycle);
             return RESPOND_SUCESS;
         }
     }
@@ -269,28 +269,28 @@ uint8_t servo_ctrl_pwr_pin(uint8_t servo_id, int pin_state )
     for(int i=0; i < sizeof(gripper_slot_block); i++)
     {
         if(gripper_slot_block[i].normal_servo1.servo_id == servo_id){
-            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_port,
                               gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
                               pin_state);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].normal_servo2.servo_id == servo_id){
-            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_port,
                               gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
                               pin_state);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].linear_main_servo.servo_id == servo_id){
-            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_port,
                               gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
                               pin_state);
             return RESPOND_SUCESS;
         }
 
         if(gripper_slot_block[i].linear_sub_servo.servo_id == servo_id){
-            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
+            HAL_GPIO_WritePin(gripper_slot_block[i].normal_servo1.peripheral_block.pwr_port,
                               gripper_slot_block[i].normal_servo1.peripheral_block.pwr_pin,
                               pin_state);
             return RESPOND_SUCESS;
@@ -299,4 +299,57 @@ uint8_t servo_ctrl_pwr_pin(uint8_t servo_id, int pin_state )
 
     return RESPOND_FAILED;
 }
+
+void servo_ctrl_pwr_pin(servo_control_block* servo, uint16_t pin_state)
+{
+    HAL_GPIO_WritePin(servo->peripheral_block.pwr_port,
+                      servo->peripheral_block.pwr_pin,
+                      pin_state);
+}
+
+void process_control_servo(servo_control_block* servo, ServoControl_Def ctrl)
+{
+    servo->motor_control = ctrl;
+
+    switch (ctrl) {
+
+    case MOTOR_OFF:
+        servo_ctrl_pwr_pin(servo, SERVO_PWR_OFF);
+        servo->motor_status = MOTOR_OFF;
+        break;
+
+    case MOTOR_ON:
+        servo_ctrl_pwr_pin(servo, SERVO_PWR_ON);
+        servo->motor_status = MOTOR_RUNNING;
+        break;
+
+    case MOTOR_SET_PWM:
+        servo_set_pwm_duty_cycle(servo,servo->pwm_duty_val);
+        servo->motor_status = MOTOR_SET_PWM;
+        break;
+
+    case MOTOR_CLAMP:
+        servo_set_pwm_duty_cycle(servo, servo->pwm_duty_val);
+        servo->motor_status = MOTOR_CLAMP;
+        break;
+
+    case MOTOR_RELEASE:
+        servo_ctrl_pwr_pin(servo, SERVO_PWR_OFF);
+        servo->motor_status = MOTOR_RELEASE;
+        break;
+
+    case MOTOR_SPECIAL_RELEASE:
+        servo_ctrl_pwr_pin(servo, SERVO_PWR_OFF);
+        servo->motor_status = MOTOR_RELEASE;
+        break;
+
+    case MOTOR_AUTO:
+        break;
+
+    case MOTOR_MANUAL:
+        break;
+    }
+}
+
+void process_control_servo(gripper_slot_control_block* gripper_slot);
 
