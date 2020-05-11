@@ -415,6 +415,7 @@ typedef enum ProtocolResponse_Def{
 typedef enum ServoControl_Def{
     MOTOR_OFF,
     MOTOR_ON,
+    MOTOR_SET_PWM,
     MOTOR_RUNNING,
     MOTOR_CLAMP,
     MOTOR_RELEASE,
@@ -450,6 +451,8 @@ typedef struct servo_control_block{
 
     ServoContrl_Def motor_control;
 
+    uint8_t alow_ctrl;
+
     uint16_t pwm_duty_val;
 
     uint16_t pwm_calib_val;
@@ -468,7 +471,7 @@ typedef struct gripper_slot_control_block{
 
     uint8_t slot_status;
 
-    uint8_t alow_ctrl_sub_servo;
+    uint8_t phone_sensor_status;
 
     sensor_block slot_sensor_block;
 
@@ -487,4 +490,11 @@ extern gripper_slot_control_block gripper_slot_block[4];
 void gripper_init();
 uint8_t gripper_slot_init(gripper_slot_control_block* slot);
 void servo_init(servo_control_block* servo);
+void servo_set_pwm_duty_cycle(servo_control_block* servo_ctrl_block, uint16_t duty_cycle);
+uint8_t servo_set_pwm_duty_cycle(uint8_t servo_id, uint16_t duty_cycle);
+uint8_t servo_ctrl_pwr_pin(uint8_t servo_id, int pin_state );
+void servo_ctrl_pwr_pin(servo_control_block* servo, uint16_t pin_state);
+void process_control_servo(servo_control_block* servo);
+void process_control_servo(gripper_slot_control_block* gripper_slot);
+
 #endif
